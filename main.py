@@ -1,14 +1,14 @@
-import json
+
 import os
+import IO
+import matplotlib
+import numpy as np
+import cv2 as cv
 
 from math import tan
 from enum import Enum
-from json import JSONEncoder
 from matplotlib import pyplot as plt
-import matplotlib
 from tqdm import tqdm
-import numpy as np
-import cv2 as cv
 from plyfile import PlyData, PlyElement
 import open3d as o3d
 
@@ -22,7 +22,7 @@ class DispCriterium(Enum):
     argmin = 1
 
 # >>> Disparity variables <<<
-DISP_OUTPUT_FILE = r"./disp_output_file.json"
+DISP_FILE = r"./disp_output_file.json"
 use_saved_disp = True
 
 max_disp = 64
@@ -52,8 +52,8 @@ def calculate_focal_with_FOV(image_width, fov):
     return (image_width / (2 * tan(fov / 2)))
 
 def calculate_disparity(img_left, img_right, max_disparity, window_size, direction, criterium):
-    if use_saved_disp and os.path.isfile(DISP_OUTPUT_FILE):
-        disp = read_disp_data()
+    if use_saved_disp and os.path.isfile(DISP_FILE):
+        disp = IO.read_disp_data(DISP_FILE)
         return disp
 
     else:
@@ -62,7 +62,7 @@ def calculate_disparity(img_left, img_right, max_disparity, window_size, directi
         elif direction == DispDirection.left_to_right:
             disp = calculate_disparity_bm_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium)
 
-        save_disp_to_json(disp)
+        IO.save_disp_to_json(disp, DISP_FILE)
         return disp
 
 def calculate_disparity_bm_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium):
@@ -119,50 +119,32 @@ def calculate_disparity_bm_from_left_to_right(img_left, img_right, max_disparity
 def ssd(img_left, img_right):
     return np.sum((img_left - img_right) ** 2)
 
-def save_disp_to_json(disp):
-    # >>> Saving result to json <<<
-    class NumpyArrayEncoder(JSONEncoder):
-        def default(self, obj):
-            if isinstance(obj, np.ndarray):
-                return obj.tolist()
-            return JSONEncoder.default(self, obj)
-
-    json_data = {
-        'disp': disp
-    }
-
-    # Writing to json
-    with open(DISP_OUTPUT_FILE, "w") as outfile:
-        json.dump(json_data, outfile, indent=4, cls=NumpyArrayEncoder)
-
-def read_disp_data():
-    # Read JSON file
-    print(f'Reading calibration file: {DISP_OUTPUT_FILE}')
-    with open(fr'{DISP_OUTPUT_FILE}', 'r') as f:
-      calibration_data = json.load(f)
-
-    disp = np.array(calibration_data['disp'])
-    return disp
 
 
 
 
-def disp_to_depth(map, outputFileName, fx, baseline, doffs):
-    h, w = map.shape
-    print("fx:", fx)
 
-    newMap = np.zeros(shape=map.shape)
-    for i in range(len(map)):
-        for j in range(len(map[i])):
-            if (map[i][j] == 0):
-                newMap[i][j] = (fx * baseline) / 1
+def disp_to_depth(disp, f, baseline, doffs):
+    depth = np.zeros(shape=disp.shape)
+    for i in range(len(disp)):
+        for j in range(len(disp[i])):
+            if (disp[i][j] == 0):
+                depth[i][j] = (f * baseline) / 1
             else:
-                newMap[i][j] = (fx * baseline) / (map[i][j] + doffs)
-    plt.imsave(outputFileName, newMap, cmap = 'gray')
-    return newMap
+                depth[i][j] = (f * baseline) / (disp[i][j] + doffs)
+    return depth
 
 def depth_to_disp(depth, baseline, f, doffs):
     return baseline * f / depth - doffs
+def depth_to_disp(depth, f, baseline, doffs):
+    disp = np.zeros(shape=depth.shape)
+    for i in range(len(depth)):
+        for j in range(len(depth[i])):
+            if (depth[i][j] == 0):
+                disp[i][j] = (baseline * f) / 1
+            else:
+                disp[i][j] = (baseline * f) / (depth[i][j] - doffs)
+    return disp
 
 def compute_cx_cy(width,height):
     cx = width/2
@@ -192,15 +174,36 @@ if __name__ == '__main__':
     img_left = cv.imread(IMG_LEFT)
     img_right = cv.imread(IMG_RIGHT)
 
+    # Calculate disparity
     disp = calculate_disparity(img_left, img_right, max_disp, window_size, disp_direction, disp_criterium)
-    plt.show()
-    plt.imsave("disparity.jpg", disp)
 
+    # Plot and save disparity
+    matplotlib.pyplot.imshow(disp)
+    plt.show()
+    plt.imsave("results/disparity.png", disp)
+    cv.imwrite("results/disparity_raw.png", disp)
+
+    # Calculate focal and depth
     F = calculate_focal_with_FOV(np.shape(img_left)[1], FOV)
-    depth = disp_to_depth(disp, "depth_no_grey.jpg", F, BASELINE, 0)
+    depth = disp_to_depth(disp, F, BASELINE, 0)
 
     imgPlot = matplotlib.pyplot.imshow(depth)
     plt.show()
     
     Fy = calculate_focal_with_FOV(np.shape(img_left)[0], FOV)
     save_depth_to_ply(depth,F) #fx fy???
+    # Plot and save depth
+    matplotlib.pyplot.imshow(depth)
+    plt.show()
+    plt.imsave("results/depth.png", depth)
+    cv.imwrite("results/depth_raw.png", depth)
+
+    # Save depth from file
+    read_depth = IO.read_image_to_np_array("results/depth_raw.png")
+
+    # Calculate disparity from read depth
+    read_disp = depth_to_disp(read_depth, F, BASELINE, 0)
+
+    # Plot read disparity
+    matplotlib.pyplot.imshow(read_disp)
+    plt.show()
