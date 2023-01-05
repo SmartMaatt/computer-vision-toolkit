@@ -9,6 +9,8 @@ import matplotlib
 from tqdm import tqdm
 import numpy as np
 import cv2 as cv
+from plyfile import PlyData, PlyElement
+import open3d as o3d
 
 
 class DispDirection(Enum):
@@ -159,11 +161,30 @@ def disp_to_depth(map, outputFileName, fx, baseline, doffs):
     plt.imsave(outputFileName, newMap, cmap = 'gray')
     return newMap
 
-def disp_to_depth(disp, baseline, f, doffs):
-    return baseline * f / (disp + doffs)
-
 def depth_to_disp(depth, baseline, f, doffs):
     return baseline * f / depth - doffs
+
+def compute_cx_cy(width,height):
+    cx = width/2
+    cy = height/2
+    return (cx,cy)
+
+def save_depth_to_ply(depth,fov):
+    pcd = []
+    height, width = depth.shape
+    cx,cy = compute_cx_cy(width,height)
+    for i in range(height):
+        for j in range(width):
+            z = depth[i][j]
+            x = (j - cx) * z / fov #fx
+            y = (i - cy) * z / fov #fy
+            pcd.append([x, y, z])
+    pcd_o3d = o3d.geometry.PointCloud()  # create point cloud object
+    pcd_o3d.points = o3d.utility.Vector3dVector(pcd)  # set pcd_np as the point cloud points
+    # Visualize:
+    o3d.visualization.draw_geometries([pcd_o3d])
+
+
 
 
 
@@ -180,3 +201,6 @@ if __name__ == '__main__':
 
     imgPlot = matplotlib.pyplot.imshow(depth)
     plt.show()
+    
+    Fy = calculate_focal_with_FOV(np.shape(img_left)[0], FOV)
+    save_depth_to_ply(depth,F) #fx fy???
