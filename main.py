@@ -1,7 +1,7 @@
 import json
 import os
 
-#import pyplot from matplotlib
+from math import tan
 from enum import Enum
 from json import JSONEncoder
 from matplotlib import pyplot as plt
@@ -21,26 +21,33 @@ class DispCriterium(Enum):
 
 # >>> Disparity variables <<<
 DISP_OUTPUT_FILE = r"./disp_output_file.json"
-use_saved_disp = False
+use_saved_disp = True
 
 max_disp = 64
 window_size = (11, 11)
 disp_direction = DispDirection.left_to_right
 disp_criterium = DispCriterium.argmin
 
-IMG_LEFT = r"./Cones/im2.png"
-IMG_RIGHT = r"./Cones/im6.png"
+IMG_LEFT = r"./Car/left.png"
+IMG_RIGHT = r"./Car/right.png"
+# IMG_LEFT = r"./Cones/im2.png"
+# IMG_RIGHT = r"./Cones/im6.png"
 # IMG_LEFT = r"./Motocycle/im0.png"
 # IMG_RIGHT = r"./Motocycle/im1.png"
 #https://vision.middlebury.edu/stereo/data/scenes2014/datasets/Motorcycle-perfect/
 #https://vision.middlebury.edu/stereo/data/scenes2003/newdata/cones/
 
 # Dane w calib.txt datasetu - w tym przypadku dla bike1 i bike2
-DOFFS = 124.343
-BASELINE = 193.001
-F = 3979.911
+DOFFS = None
+BASELINE = 0.6
+F = None
+FOV = 120
 
 
+
+
+def calculate_focal_with_FOV(image_width, fov):
+    return (image_width / (2 * tan(fov / 2)))
 
 def calculate_disparity(img_left, img_right, max_disparity, window_size, direction, criterium):
     if use_saved_disp and os.path.isfile(DISP_OUTPUT_FILE):
@@ -49,9 +56,12 @@ def calculate_disparity(img_left, img_right, max_disparity, window_size, directi
 
     else:
         if direction == DispDirection.right_to_left:
-            return calculate_disparity_bm_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium)
+            disp = calculate_disparity_bm_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium)
         elif direction == DispDirection.left_to_right:
-            return calculate_disparity_bm_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium)     
+            disp = calculate_disparity_bm_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium)
+
+        save_disp_to_json(disp)
+        return disp
 
 def calculate_disparity_bm_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium):
     height = np.shape(img_left)[0]
@@ -95,7 +105,7 @@ def calculate_disparity_bm_from_left_to_right(img_left, img_right, max_disparity
 
             for offset in range(n_disparity):
                 roi = img_left[y - half_window_height: y + half_window_height, x - half_window_width + offset: x + half_window_width + offset]
-                score[offset + 1] = ssd(template, roi)
+                score[offset - 1] = ssd(template, roi)
 
             if criterium == DispCriterium.argmax:
                 disparity[y, x] = score.argmax()
@@ -135,6 +145,20 @@ def read_disp_data():
 
 
 
+def disp_to_depth(map, outputFileName, fx, baseline, doffs):
+    h, w = map.shape
+    print("fx:", fx)
+
+    newMap = np.zeros(shape=map.shape)
+    for i in range(len(map)):
+        for j in range(len(map[i])):
+            if (map[i][j] == 0):
+                newMap[i][j] = (fx * baseline) / 1
+            else:
+                newMap[i][j] = (fx * baseline) / (map[i][j] + doffs)
+    plt.imsave(outputFileName, newMap, cmap = 'gray')
+    return newMap
+
 def disp_to_depth(disp, baseline, f, doffs):
     return baseline * f / (disp + doffs)
 
@@ -148,19 +172,11 @@ if __name__ == '__main__':
     img_right = cv.imread(IMG_RIGHT)
 
     disp = calculate_disparity(img_left, img_right, max_disp, window_size, disp_direction, disp_criterium)
-    save_disp_to_json(disp)
-
-    color_map = plt.cm.get_cmap('turbo', 8)
-    plt.imshow(disp, cmap=color_map)
     plt.show()
+    plt.imsave("disparity.jpg", disp)
 
-    imgPlot = matplotlib.pyplot.imshow(disp)
+    F = calculate_focal_with_FOV(np.shape(img_left)[1], FOV)
+    depth = disp_to_depth(disp, "depth_no_grey.jpg", F, BASELINE, 0)
+
+    imgPlot = matplotlib.pyplot.imshow(depth)
     plt.show()
-
-    # depth tylko jeżeli jest baseline, fokal i doffs - dla bike byly w pliku calib.txt https://vision.middlebury.edu/stereo/data/scenes2014/
-    # depth = disparity.disp_to_depth(disp, BASELINE, F, DOFFS)
-
-    #jak zapisac disparity i depth do pliku? - na zajeciach mowil o 3 mozliwosciach:
-    # #bilbioteką (?)tif(?) zapisać tablicę
-    #zapisać jako obrraz (.png)
-    #znormalizować do 8 bitów i zapisać jako obraz
