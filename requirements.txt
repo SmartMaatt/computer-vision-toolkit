@@ -2,3 +2,5 @@ numpy==1.21.6
 opencv_python==4.6.0.66
 matplotlib
 tqdm
+plyfile
+open3d

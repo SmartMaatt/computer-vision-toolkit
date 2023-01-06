@@ -1,4 +1,4 @@
-
+import sys
 import os
 import IO
 import matplotlib
@@ -117,14 +117,14 @@ def calculate_disparity_bm_from_left_to_right(img_left, img_right, max_disparity
 
 # Sum of square difference
 def ssd(img_left, img_right):
-    return np.sum((img_left - img_right) ** 2)
+    return np.sum((img_left - img_right) ** 2) #/ np.sqrt(np.sum(img_left * img_left) * np.sum(img_right * img_right))
 
 
 
 
 
 
-def disp_to_depth(disp, f, baseline, doffs):
+def calculate_depth_from_disp(disp, f, baseline, doffs):
     depth = np.zeros(shape=disp.shape)
     for i in range(len(disp)):
         for j in range(len(disp[i])):
@@ -134,9 +134,7 @@ def disp_to_depth(disp, f, baseline, doffs):
                 depth[i][j] = (f * baseline) / (disp[i][j] + doffs)
     return depth
 
-def depth_to_disp(depth, baseline, f, doffs):
-    return baseline * f / depth - doffs
-def depth_to_disp(depth, f, baseline, doffs):
+def calculate_disp_from_depth(depth, f, baseline, doffs):
     disp = np.zeros(shape=depth.shape)
     for i in range(len(depth)):
         for j in range(len(depth[i])):
@@ -169,10 +167,46 @@ def save_depth_to_ply(depth,fov):
 
 
 
+def array_to_bgra(image):
+    """Convert a CARLA raw image to a BGRA numpy array."""
+    array = np.frombuffer(image, dtype=np.dtype("uint8"))
+    array = np.reshape(array, (image.shape[0], image.shape[1], 4))
+    return array
+
+def array_to_rgb(image):
+    """Convert a CARLA raw image to a RGB numpy array."""
+    array = array_to_bgra(image)
+    # Convert BGRA to RGB.
+    array = array[:, :, :3]
+    array = array[:, :, ::-1]
+    return array
+
+def calculate_depth_from_rgb24(image):
+    """
+    Convert an image containing CARLA encoded depth-map to a 2D array containing
+    the depth value of each pixel normalized between [0.0, 1.0].
+    """
+    array = array_to_bgra(image)
+    array = array.astype(np.float32)
+    # # Apply (R + G * 256 + B * 256 * 256) / (256 * 256 * 256 - 1).
+    normalized_depth = np.dot(array[:, :, :3], [65536.0, 256.0, 1.0])
+    normalized_depth /= 16777215.0  # (256.0 * 256.0 * 256.0 - 1.0)
+
+    # TO DO - transform algorithm form np.dot to normal loops
+    # map = np.zeros(shape=array.shape)
+    # for i in range(len(array)):
+    #     for j in range(len(array[i])):
+    #         value 
+
+    return normalized_depth * 1000
+
 
 if __name__ == '__main__':
     img_left = cv.imread(IMG_LEFT)
     img_right = cv.imread(IMG_RIGHT)
+
+    read_depth = IO.read_image_to_np_array("results/depth_raw.png")
+    read_depth2 = cv.imread("results/depth_raw.png")
 
     # Calculate disparity
     disp = calculate_disparity(img_left, img_right, max_disp, window_size, disp_direction, disp_criterium)
@@ -185,25 +219,35 @@ if __name__ == '__main__':
 
     # Calculate focal and depth
     F = calculate_focal_with_FOV(np.shape(img_left)[1], FOV)
-    depth = disp_to_depth(disp, F, BASELINE, 0)
-
-    imgPlot = matplotlib.pyplot.imshow(depth)
-    plt.show()
+    depth = calculate_depth_from_disp(disp, F, BASELINE, 0)
     
+    # Save depth as ply
     Fy = calculate_focal_with_FOV(np.shape(img_left)[0], FOV)
     save_depth_to_ply(depth,F) #fx fy???
+
     # Plot and save depth
     matplotlib.pyplot.imshow(depth)
     plt.show()
     plt.imsave("results/depth.png", depth)
     cv.imwrite("results/depth_raw.png", depth)
 
-    # Save depth from file
-    read_depth = IO.read_image_to_np_array("results/depth_raw.png")
+    # Read 24bit map form file and calculate depth from it
+    read_24bit = IO.read_image_to_np_array("Car/depth.png")
+    new_depth = calculate_depth_from_rgb24(read_24bit)
+    matplotlib.pyplot.imshow(new_depth)
+    plt.show()
+    cv.imwrite("read_depth.png", new_depth)
 
-    # Calculate disparity from read depth
-    read_disp = depth_to_disp(read_depth, F, BASELINE, 0)
+    # # Save depth from file
+    # read_depth = IO.read_image_to_np_array("results/depth_raw.png")
+
+    # # Calculate disparity from read depth
+    # read_disp = calculate_disp_from_depth(read_depth, F, BASELINE, 0)
+
+    # # Plot read disparity
+    # matplotlib.pyplot.imshow(read_disp)
+    # plt.show()
 
     # Plot read disparity
-    matplotlib.pyplot.imshow(read_disp)
-    plt.show()
+    # matplotlib.pyplot.imshow(read_disp)
+    # plt.show()
