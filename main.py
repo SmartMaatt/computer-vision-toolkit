@@ -22,7 +22,7 @@ class DispCriterium(Enum):
     argmin = 1
 
 # >>> Disparity variables <<<
-DISP_FILE = r"./disp_output_file.json"
+DISP_FILE = r"./disp_output_file_Car.json"
 use_saved_disp = True
 
 max_disp = 64
@@ -191,15 +191,37 @@ def calculate_depth_from_rgb24(image):
     array = array.astype(np.float32)
     # # Apply (R + G * 256 + B * 256 * 256) / (256 * 256 * 256 - 1).
     normalized_depth = np.dot(array[:, :, :3], [65536.0, 256.0, 1.0])
-    normalized_depth /= 16777215.0  # (256.0 * 256.0 * 256.0 - 1.0)
 
-    # TO DO - transform algorithm form np.dot to normal loops
-    # map = np.zeros(shape=array.shape)
+    # # TO DO - transform algorithm form np.dot to normal loops
+    normalized_depth2 = np.zeros(shape=array.shape[:2])
     # for i in range(len(array)):
     #     for j in range(len(array[i])):
-    #         value 
+    #         value = array[i][j][2] + array[i][j][1] * 256 + array[i][j][0] * 256 * 256
+    #         normalized_depth2[i][j] = value
 
-    return normalized_depth * 1000
+    normalized_depth /= 16777215.0  # (256.0 * 256.0 * 256.0 - 1.0)
+    normalized_depth2 /= 16777215.0
+    return (normalized_depth * 1000, normalized_depth2 * 1000)
+
+def calculate_rgb24_from_depth(image):
+    array = image.astype(np.float32)
+    array /= 1000
+    array *= 16777215.0
+
+    rgb24 = np.zeros(shape=[array.shape[0], array.shape[1], 3])
+    for i in range(len(array)):
+        for j in range(len(array[i])):
+            data = array[i][j]
+            r = data % 256
+            data = (data - r) / 256
+            g = data % 256
+            b = (data - g) / 256
+
+            rgb24[i][j][0] = b % 256
+            rgb24[i][j][1] = g % 256
+            rgb24[i][j][2] = r % 256
+    
+    return rgb24
 
 
 if __name__ == '__main__':
@@ -232,12 +254,32 @@ if __name__ == '__main__':
     plt.imsave("results/depth.png", depth)
     cv.imwrite("results/depth_raw.png", depth)
 
+    # Calculate rgb24 depth
+    rgb24 = calculate_rgb24_from_depth(depth)
+    rgb24 = rgb24.astype(np.uint8)
+
+    # Plot and save rgb24
+    matplotlib.pyplot.imshow(rgb24)
+    plt.show()
+    plt.imsave("results/rgb24.png", rgb24)
+    cv.imwrite("results/rgb24_raw.png", rgb24)
+    sys.exit()
+
     # Read 24bit map form file and calculate depth from it
     read_24bit = IO.read_image_to_np_array("Car/depth.png")
-    new_depth = calculate_depth_from_rgb24(read_24bit)
+    (new_depth, new_depth2) = calculate_depth_from_rgb24(read_24bit)
     matplotlib.pyplot.imshow(new_depth)
     plt.show()
     cv.imwrite("read_depth.png", new_depth)
+
+    matplotlib.pyplot.imshow(new_depth2)
+    plt.show()
+    cv.imwrite("read_depth.png", new_depth2)
+
+    new_rgb24 = calculate_rgb24_from_depth(new_depth)
+    matplotlib.pyplot.imshow(new_rgb24)
+    plt.show()
+    cv.imwrite("read_rgb24.png", new_rgb24)
 
     # # Save depth from file
     # read_depth = IO.read_image_to_np_array("results/depth_raw.png")
