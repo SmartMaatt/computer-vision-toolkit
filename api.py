@@ -70,15 +70,6 @@ def image_to_rgb(image):
 
 
 # >>> Disparity methods <<<
-def calculate_disparity(img_left, img_right, max_disparity=64, window_size=(11, 11), direction=DispDirection.left_to_right, criterium=DispCriterium.argmin):
-    if direction == DispDirection.right_to_left:
-        return calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium)
-    elif direction == DispDirection.left_to_right:
-        return calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium)
-    else:
-        print("Wrong direction argument!")
-
-
 def calculate_disparity_with_SGBM(img_left, img_right, max_disparity=64, window_size=11):
     stereo = cv.StereoSGBM_create(
         minDisparity=0,
@@ -113,7 +104,16 @@ def calculate_disparity_with_BM(img_left, img_right, max_disparity=64, window_si
     return disp
 
 
-def calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium):
+def calculate_disparity(img_left, img_right, max_disparity=64, window_size=(11, 11), direction=DispDirection.left_to_right, criterium=DispCriterium.argmin):
+    if direction == DispDirection.right_to_left:
+        return calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium)
+    elif direction == DispDirection.left_to_right:
+        return calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium)
+    else:
+        print("Wrong direction argument!")
+
+
+def calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium, print_progress=True):
     height = np.shape(img_left)[0]
     width = np.shape(img_left)[1]
     window_height = window_size[0]
@@ -122,7 +122,11 @@ def calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, w
     half_window_width = window_width // 2
     disparity = np.zeros((height, width))
 
-    for y in tqdm(range(half_window_height, height - half_window_height)):
+    iterator = range(half_window_height, height - half_window_height)
+    if print_progress:
+        iterator = tqdm(iterator)
+
+    for y in iterator:
         for x in range(width - half_window_width, half_window_width, -1):
             template = img_left[y - half_window_height: y + half_window_height,
                                 x - half_window_width: x + half_window_width]
@@ -141,7 +145,7 @@ def calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, w
     return disparity
 
 
-def calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium):
+def calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium, print_progress=True):
     height = np.shape(img_left)[0]
     width = np.shape(img_left)[1]
     window_height = window_size[0]
@@ -150,7 +154,11 @@ def calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, w
     half_window_width = window_width // 2
     disparity = np.zeros((height, width))
 
-    for y in tqdm(range(half_window_height, height - half_window_height)):
+    iterator = range(half_window_height, height - half_window_height)
+    if print_progress:
+        iterator = tqdm(iterator)
+
+    for y in iterator:
         for x in range(half_window_width, width - half_window_width):
             template = img_right[y - half_window_height: y + half_window_height,
                                  x - half_window_width: x + half_window_width]
@@ -172,6 +180,11 @@ def calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, w
 # Sum of square difference
 def ssd(img_left, img_right):
     return np.sum((img_left - img_right) ** 2)
+
+
+def abs_m(img_left, img_right):
+    '''Should be faster than ssd and give the same result'''
+    return np.sum(np.abs(img_left - img_right))
 
 
 def calculate_disparity_with_depth(depth, f, baseline, doffs):
