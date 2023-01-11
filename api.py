@@ -8,19 +8,24 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 import open3d as o3d
 
+
 class DispDirection(Enum):
     left_to_right = 0
     right_to_left = 1
 
+
 class DispCriterium(Enum):
     argmax = 0
     argmin = 1
+
 
 # >>> Global variables <<<
 DISP_FILE = r"./disp_output_file_Egz34.json"
 USE_SAVED_DISP = False
 
 # >>> General purpose methods <<<
+
+
 def clamp(min, max, value):
     if value < min:
         value = min
@@ -28,27 +33,34 @@ def clamp(min, max, value):
         value = max
     return value
 
+
 def calculate_focal_with_FOV(image_width, fov):
     return (image_width / (2 * tan(fov / 2)))
+
 
 def calculate_baseline_with_T_matrix(T):
     return round(np.linalg.norm(T) * 0.1, 2)
 
+
 def calculate_fovX_with_focalX(image_height, fx):
     return 2 * math.atan(image_height / (2 * fx))
 
+
 def calculate_fovY_with_focalY(image_width, fy):
     return 2 * math.atan(image_width / (2 * fy))
+
 
 def calculate_cx_cy_with_image_size(width, height):
     cx = width / 2
     cy = height / 2
     return (cx, cy)
 
+
 def image_to_bgra(image):
     array = np.frombuffer(image, dtype=np.dtype("uint8"))
     array = np.reshape(array, (image.shape[0], image.shape[1], 4))
     return array
+
 
 def image_to_rgb(image):
     array = image_to_bgra(image)
@@ -57,9 +69,8 @@ def image_to_rgb(image):
     return array
 
 
-
 # >>> Disparity methods <<<
-def calculate_disparity(img_left, img_right, max_disparity = 64, window_size = (11, 11), direction = DispDirection.left_to_right, criterium = DispCriterium.argmin):
+def calculate_disparity(img_left, img_right, max_disparity=64, window_size=(11, 11), direction=DispDirection.left_to_right, criterium=DispCriterium.argmin):
     if direction == DispDirection.right_to_left:
         return calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium)
     elif direction == DispDirection.left_to_right:
@@ -68,36 +79,36 @@ def calculate_disparity(img_left, img_right, max_disparity = 64, window_size = (
         print("Wrong direction argument!")
 
 
-def calculate_disparity_with_SGBM(img_left, img_right, max_disparity = 64, window_size = 11):
+def calculate_disparity_with_SGBM(img_left, img_right, max_disparity=64, window_size=11):
     stereo = cv.StereoSGBM_create(
-                                minDisparity = 0,
-                                numDisparities = max_disparity,
-                                blockSize = window_size,
-                                P1 = 3 * 4 * window_size ** 2,
-                                P2 = 3 * 32 * window_size ** 2,
-                                disp12MaxDiff = 1,
-                                preFilterCap = 63,
-                                uniquenessRatio = 10,
-                                speckleWindowSize = 100,
-                                speckleRange = 32,
-                                mode = cv.StereoSGBM_MODE_HH)
+        minDisparity=0,
+        numDisparities=max_disparity,
+        blockSize=window_size,
+        P1=3 * 4 * window_size ** 2,
+        P2=3 * 32 * window_size ** 2,
+        disp12MaxDiff=1,
+        preFilterCap=63,
+        uniquenessRatio=10,
+        speckleWindowSize=100,
+        speckleRange=32,
+        mode=cv.StereoSGBM_MODE_HH)
     disp = stereo.compute(img_left, img_right).astype('float32') / 16
     return disp
 
 
-def calculate_disparity_with_BM(img_left, img_right, max_disparity = 64, window_size = 11):
+def calculate_disparity_with_BM(img_left, img_right, max_disparity=64, window_size=11):
     stereo = cv.StereoBM(
-                        minDisparity = 0,
-                        numDisparities = max_disparity,
-                        blockSize = window_size,
-                        P1 = 3 * 4 * window_size ** 2,
-                        P2 = 3 * 32 * window_size ** 2,
-                        disp12MaxDiff = 1,
-                        preFilterCap = 63,
-                        uniquenessRatio = 10,
-                        speckleWindowSize = 100,
-                        speckleRange = 32,
-                        mode = cv.StereoSGBM_MODE_HH)
+        minDisparity=0,
+        numDisparities=max_disparity,
+        blockSize=window_size,
+        P1=3 * 4 * window_size ** 2,
+        P2=3 * 32 * window_size ** 2,
+        disp12MaxDiff=1,
+        preFilterCap=63,
+        uniquenessRatio=10,
+        speckleWindowSize=100,
+        speckleRange=32,
+        mode=cv.StereoSGBM_MODE_HH)
     disp = stereo.compute(img_left, img_right).astype('float32') / 16
     return disp
 
@@ -114,13 +125,13 @@ def calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, w
     for y in tqdm(range(half_window_height, height - half_window_height)):
         for x in range(width - half_window_width, half_window_width, -1):
             template = img_left[y - half_window_height: y + half_window_height,
-                       x - half_window_width: x + half_window_width]
+                                x - half_window_width: x + half_window_width]
             n_disparity = min(max_disparity, x - half_window_width)
             score = np.zeros(n_disparity)
 
             for offset in range(n_disparity, 0, -1):
                 roi = img_right[y - half_window_height: y + half_window_height,
-                      x - half_window_width - offset: x + half_window_width - offset]
+                                x - half_window_width - offset: x + half_window_width - offset]
                 score[offset - 1] = ssd(roi, template)
 
             if criterium == DispCriterium.argmax:
@@ -142,13 +153,13 @@ def calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, w
     for y in tqdm(range(half_window_height, height - half_window_height)):
         for x in range(half_window_width, width - half_window_width):
             template = img_right[y - half_window_height: y + half_window_height,
-                       x - half_window_width: x + half_window_width]
+                                 x - half_window_width: x + half_window_width]
             n_disparity = min(max_disparity, width - x - half_window_width)
             score = np.zeros(n_disparity)
 
             for offset in range(n_disparity):
                 roi = img_left[y - half_window_height: y + half_window_height,
-                      x - half_window_width + offset: x + half_window_width + offset]
+                               x - half_window_width + offset: x + half_window_width + offset]
                 score[offset - 1] = ssd(template, roi)
 
             if criterium == DispCriterium.argmax:
@@ -170,10 +181,10 @@ def calculate_disparity_with_depth(depth, f, baseline, doffs):
             if (depth[i][j] == 0):
                 pass
             else:
-                disp[i][j] = clamp(0, 255, (baseline * f) / (depth[i][j] - doffs))
+                disp[i][j] = clamp(0, 255, (baseline * f) /
+                                   (depth[i][j] - doffs))
                 #disp[i][j] = (baseline * f) / (depth[i][j] - doffs)
     return disp
-
 
 
 # >>> Depth methods <<<
@@ -220,7 +231,6 @@ def calculate_rgb24_with_depth(depth, max_distance):
     return rgb24
 
 
-
 # >>> Point cloud methods <<<
 def save_depth_to_ply(depth, fov, out_path):
     pcd = []
@@ -233,7 +243,8 @@ def save_depth_to_ply(depth, fov, out_path):
             y = (i - cy) * z / fov  # fy
             pcd.append([x, y, z])
     pcd_o3d = o3d.geometry.PointCloud()                 # Create point cloud object
-    pcd_o3d.points = o3d.utility.Vector3dVector(pcd)    # Set pcd_np as the point cloud points
+    pcd_o3d.points = o3d.utility.Vector3dVector(
+        pcd)    # Set pcd_np as the point cloud points
     o3d.io.write_point_cloud(out_path, pcd_o3d)
     o3d.visualization.draw_geometries([pcd_o3d])        # Visualize
 
