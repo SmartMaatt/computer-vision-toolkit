@@ -25,6 +25,15 @@ ndisp = 190
 x = 830
 y = 530
 
+# Convert to grey
+img_left = cv.cvtColor(img_left, cv.COLOR_BGR2GRAY)
+img_right = cv.cvtColor(img_right, cv.COLOR_BGR2GRAY)
+
+# Filtering for smoother 
+filter_size = 5
+kernel = np.ones((filter_size, filter_size), np.float32) / (filter_size * filter_size)
+img_left = cv.filter2D(img_left, -1, kernel)
+img_right = cv.filter2D(img_right, -1, kernel)
 
 # Obliczanie dysparycji z danych przy pomocy SGBM
 disp = api.calculate_disparity_with_SGBM(img_left, img_right, max_disparity=ndisp, window_size=2)
