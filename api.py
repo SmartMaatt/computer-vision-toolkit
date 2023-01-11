@@ -1,4 +1,5 @@
 import math
+import multiprocessing as mlp
 import numpy as np
 import cv2 as cv
 
@@ -104,25 +105,71 @@ def calculate_disparity_with_BM(img_left, img_right, max_disparity=64, window_si
     return disp
 
 
-def calculate_disparity(img_left, img_right, max_disparity=64, window_size=(11, 11), direction=DispDirection.left_to_right, criterium=DispCriterium.argmin):
+def calculate_disparity(img_left, img_right, max_disparity=64, window_size=(11, 11), direction=DispDirection.left_to_right, criterium=DispCriterium.argmin, threads_num=1):
+    params = (img_left, img_right, max_disparity, window_size, criterium)
     if direction == DispDirection.right_to_left:
-        return calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium)
+        func = calculate_disparity_from_right_to_left
     elif direction == DispDirection.left_to_right:
-        return calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium)
+        func = calculate_disparity_from_left_to_right
     else:
-        print("Wrong direction argument!")
+        raise Exception("Wrong direction argument!")
+
+    if threads_num == 1:
+        return func(*params)
+    else:
+        return calculate_disparity_multithread(func, params, window_size, img_left.shape, threads_num)
 
 
-def calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium, print_progress=True):
+def calculate_disparity_multithread_worker(func, params, range, outputDict, first):
+    outputDict[range] = func(*params, yRange=range, print_progress=first)
+    print("Finished disparity range: ", range)
+
+
+def calculate_disparity_multithread(func, params, window_size, dim, threads_num):
+    halfS = math.floor(window_size[0]/2)
+    yRange = (halfS, dim[0]-halfS)
+    yRanges = []
+    pools = []
+    sizePerThread = math.ceil((yRange[1] - yRange[0]) / threads_num)
+    manager = mlp.Manager()
+    outputDict = manager.dict()
+    first = True
+
+    for i in range(yRange[0], yRange[1], sizePerThread):
+        r = (i, min(i+sizePerThread, yRange[1]))
+        yRanges.append(r)
+        cur_params = (np.copy(params[0]), np.copy(params[1]), *params[2:])
+        p = mlp.Process(target=calculate_disparity_multithread_worker, args=(
+            func, cur_params, r, outputDict, first))
+        p.start()
+        pools.append(p)
+        first = False
+    for p in pools:
+        p.join()
+
+    output = np.zeros((dim[0], dim[1]))
+    for r in yRanges:
+        output[r[0]:r[1]] = outputDict[r]
+    return output
+
+
+def calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium, yRange=(-1, -1), print_progress=True):
     height = np.shape(img_left)[0]
     width = np.shape(img_left)[1]
     window_height = window_size[0]
     window_width = window_size[1]
     half_window_height = window_height // 2
     half_window_width = window_width // 2
-    disparity = np.zeros((height, width))
+    y_range = half_window_height, height - half_window_height
+    moved_y = True
 
-    iterator = range(half_window_height, height - half_window_height)
+    if yRange[0] != -1 and yRange[1] != -1:
+        y_range = yRange
+        disparity = np.zeros((y_range[1]-y_range[0], width))
+    else:
+        disparity = np.zeros((height, width))
+        moved_y = False
+    iterator = range(y_range[0], y_range[1])
     if print_progress:
         iterator = tqdm(iterator)
 
@@ -136,16 +183,23 @@ def calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, w
             for offset in range(n_disparity, 0, -1):
                 roi = img_right[y - half_window_height: y + half_window_height,
                                 x - half_window_width - offset: x + half_window_width - offset]
-                score[offset - 1] = ssd(roi, template)
+                score[offset - 1] = abs_m(roi, template)
 
             if criterium == DispCriterium.argmax:
-                disparity[y, x] = score.argmax()
+                disp = score.argmax()
             elif criterium == DispCriterium.argmin:
-                disparity[y, x] = score.argmin()
+                disp = score.argmin()
+            else:
+                raise Exception("Wronf DispCriterium!")
+
+            if moved_y:
+                disparity[y-y_range[0], x] = disp
+            else:
+                disparity[y, x] = disp
     return disparity
 
 
-def calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium, print_progress=True):
+def calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium, yRange=(-1, -1), print_progress=True):
     height = np.shape(img_left)[0]
     width = np.shape(img_left)[1]
     window_height = window_size[0]
@@ -153,8 +207,18 @@ def calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, w
     half_window_height = window_height // 2
     half_window_width = window_width // 2
     disparity = np.zeros((height, width))
+    y_range = half_window_height, height - half_window_height
+    moved_y = True
 
-    iterator = range(half_window_height, height - half_window_height)
+    if yRange[0] != -1 and yRange[1] != -1:
+        y_range = yRange
+        disparity = np.zeros((y_range[1]-y_range[0], width))
+    else:
+        disparity = np.zeros((height, width))
+        moved_y = False
+    if yRange != (-1, -1):
+        y_range = yRange
+    iterator = range(y_range[0], y_range[1])
     if print_progress:
         iterator = tqdm(iterator)
 
@@ -168,12 +232,19 @@ def calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, w
             for offset in range(n_disparity):
                 roi = img_left[y - half_window_height: y + half_window_height,
                                x - half_window_width + offset: x + half_window_width + offset]
-                score[offset - 1] = ssd(template, roi)
+                score[offset - 1] = abs_m(template, roi)
 
             if criterium == DispCriterium.argmax:
-                disparity[y, x] = score.argmax()
+                disp = score.argmax()
             elif criterium == DispCriterium.argmin:
-                disparity[y, x] = score.argmin()
+                disp = score.argmin()
+            else:
+                raise Exception("Wronf DispCriterium!")
+
+            if moved_y:
+                disparity[y-y_range[0], x] = disp
+            else:
+                disparity[y, x] = disp
     return disparity
 
 
