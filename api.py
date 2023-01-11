@@ -1,4 +1,5 @@
 import math
+import multiprocessing as mlp
 import numpy as np
 import cv2 as cv
 
@@ -8,19 +9,24 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 import open3d as o3d
 
+
 class DispDirection(Enum):
     left_to_right = 0
     right_to_left = 1
 
+
 class DispCriterium(Enum):
     argmax = 0
     argmin = 1
+
 
 # >>> Global variables <<<
 DISP_FILE = r"./disp_output_file_Egz34.json"
 USE_SAVED_DISP = False
 
 # >>> General purpose methods <<<
+
+
 def clamp(min, max, value):
     if value < min:
         value = min
@@ -28,27 +34,34 @@ def clamp(min, max, value):
         value = max
     return value
 
+
 def calculate_focal_with_FOV(image_width, fov):
     return (image_width / (2 * tan(fov / 2)))
+
 
 def calculate_baseline_with_T_matrix(T):
     return round(np.linalg.norm(T) * 0.1, 2)
 
+
 def calculate_fovX_with_focalX(image_height, fx):
     return 2 * math.atan(image_height / (2 * fx))
 
+
 def calculate_fovY_with_focalY(image_width, fy):
     return 2 * math.atan(image_width / (2 * fy))
+
 
 def calculate_cx_cy_with_image_size(width, height):
     cx = width / 2
     cy = height / 2
     return (cx, cy)
 
+
 def image_to_bgra(image):
     array = np.frombuffer(image, dtype=np.dtype("uint8"))
     array = np.reshape(array, (image.shape[0], image.shape[1], 4))
     return array
+
 
 def image_to_rgb(image):
     array = image_to_bgra(image)
@@ -57,80 +70,136 @@ def image_to_rgb(image):
     return array
 
 
-
 # >>> Disparity methods <<<
-def calculate_disparity(img_left, img_right, max_disparity = 64, window_size = (11, 11), direction = DispDirection.left_to_right, criterium = DispCriterium.argmin):
-    if direction == DispDirection.right_to_left:
-        return calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium)
-    elif direction == DispDirection.left_to_right:
-        return calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium)
-    else:
-        print("Wrong direction argument!")
-
-
-def calculate_disparity_with_SGBM(img_left, img_right, max_disparity = 64, window_size = 11):
+def calculate_disparity_with_SGBM(img_left, img_right, max_disparity=64, window_size=11):
     stereo = cv.StereoSGBM_create(
-                                minDisparity = 0,
-                                numDisparities = max_disparity,
-                                blockSize = window_size,
-                                P1 = 3 * 4 * window_size ** 2,
-                                P2 = 3 * 32 * window_size ** 2,
-                                disp12MaxDiff = 1,
-                                preFilterCap = 63,
-                                uniquenessRatio = 10,
-                                speckleWindowSize = 100,
-                                speckleRange = 32,
-                                mode = cv.StereoSGBM_MODE_HH)
+        minDisparity=0,
+        numDisparities=max_disparity,
+        blockSize=window_size,
+        P1=3 * 4 * window_size ** 2,
+        P2=3 * 32 * window_size ** 2,
+        disp12MaxDiff=1,
+        preFilterCap=63,
+        uniquenessRatio=10,
+        speckleWindowSize=100,
+        speckleRange=32,
+        mode=cv.StereoSGBM_MODE_HH)
     disp = stereo.compute(img_left, img_right).astype('float32') / 16
     return disp
 
 
-def calculate_disparity_with_BM(img_left, img_right, max_disparity = 64, window_size = 11):
+def calculate_disparity_with_BM(img_left, img_right, max_disparity=64, window_size=11):
     stereo = cv.StereoBM(
-                        minDisparity = 0,
-                        numDisparities = max_disparity,
-                        blockSize = window_size,
-                        P1 = 3 * 4 * window_size ** 2,
-                        P2 = 3 * 32 * window_size ** 2,
-                        disp12MaxDiff = 1,
-                        preFilterCap = 63,
-                        uniquenessRatio = 10,
-                        speckleWindowSize = 100,
-                        speckleRange = 32,
-                        mode = cv.StereoSGBM_MODE_HH)
+        minDisparity=0,
+        numDisparities=max_disparity,
+        blockSize=window_size,
+        P1=3 * 4 * window_size ** 2,
+        P2=3 * 32 * window_size ** 2,
+        disp12MaxDiff=1,
+        preFilterCap=63,
+        uniquenessRatio=10,
+        speckleWindowSize=100,
+        speckleRange=32,
+        mode=cv.StereoSGBM_MODE_HH)
     disp = stereo.compute(img_left, img_right).astype('float32') / 16
     return disp
 
 
-def calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium):
+def calculate_disparity(img_left, img_right, max_disparity=64, window_size=(11, 11), direction=DispDirection.left_to_right, criterium=DispCriterium.argmin, threads_num=1):
+    params = (img_left, img_right, max_disparity, window_size, criterium)
+    if direction == DispDirection.right_to_left:
+        func = calculate_disparity_from_right_to_left
+    elif direction == DispDirection.left_to_right:
+        func = calculate_disparity_from_left_to_right
+    else:
+        raise Exception("Wrong direction argument!")
+
+    if threads_num == 1:
+        return func(*params)
+    else:
+        return calculate_disparity_multithread(func, params, window_size, img_left.shape, threads_num)
+
+
+def calculate_disparity_multithread_worker(func, params, range, outputDict, first):
+    outputDict[range] = func(*params, yRange=range, print_progress=first)
+    print("Finished disparity range: ", range)
+
+
+def calculate_disparity_multithread(func, params, window_size, dim, threads_num):
+    halfS = math.floor(window_size[0]/2)
+    yRange = (halfS, dim[0]-halfS)
+    yRanges = []
+    pools = []
+    sizePerThread = math.ceil((yRange[1] - yRange[0]) / threads_num)
+    manager = mlp.Manager()
+    outputDict = manager.dict()
+    first = True
+
+    for i in range(yRange[0], yRange[1], sizePerThread):
+        r = (i, min(i+sizePerThread, yRange[1]))
+        yRanges.append(r)
+        cur_params = (np.copy(params[0]), np.copy(params[1]), *params[2:])
+        p = mlp.Process(target=calculate_disparity_multithread_worker, args=(
+            func, cur_params, r, outputDict, first))
+        p.start()
+        pools.append(p)
+        first = False
+    for p in pools:
+        p.join()
+
+    output = np.zeros((dim[0], dim[1]))
+    for r in yRanges:
+        output[r[0]:r[1]] = outputDict[r]
+    return output
+
+
+def calculate_disparity_from_right_to_left(img_left, img_right, max_disparity, window_size, criterium, yRange=(-1, -1), print_progress=True):
     height = np.shape(img_left)[0]
     width = np.shape(img_left)[1]
     window_height = window_size[0]
     window_width = window_size[1]
     half_window_height = window_height // 2
     half_window_width = window_width // 2
-    disparity = np.zeros((height, width))
+    y_range = half_window_height, height - half_window_height
+    moved_y = True
 
-    for y in tqdm(range(half_window_height, height - half_window_height)):
+    if yRange[0] != -1 and yRange[1] != -1:
+        y_range = yRange
+        disparity = np.zeros((y_range[1]-y_range[0], width))
+    else:
+        disparity = np.zeros((height, width))
+        moved_y = False
+    iterator = range(y_range[0], y_range[1])
+    if print_progress:
+        iterator = tqdm(iterator)
+
+    for y in iterator:
         for x in range(width - half_window_width, half_window_width, -1):
             template = img_left[y - half_window_height: y + half_window_height,
-                       x - half_window_width: x + half_window_width]
+                                x - half_window_width: x + half_window_width]
             n_disparity = min(max_disparity, x - half_window_width)
             score = np.zeros(n_disparity)
 
             for offset in range(n_disparity, 0, -1):
                 roi = img_right[y - half_window_height: y + half_window_height,
-                      x - half_window_width - offset: x + half_window_width - offset]
-                score[offset - 1] = ssd(roi, template)
+                                x - half_window_width - offset: x + half_window_width - offset]
+                score[offset - 1] = abs_m(roi, template)
 
             if criterium == DispCriterium.argmax:
-                disparity[y, x] = score.argmax()
+                disp = score.argmax()
             elif criterium == DispCriterium.argmin:
-                disparity[y, x] = score.argmin()
+                disp = score.argmin()
+            else:
+                raise Exception("Wronf DispCriterium!")
+
+            if moved_y:
+                disparity[y-y_range[0], x] = disp
+            else:
+                disparity[y, x] = disp
     return disparity
 
 
-def calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium):
+def calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, window_size, criterium, yRange=(-1, -1), print_progress=True):
     height = np.shape(img_left)[0]
     width = np.shape(img_left)[1]
     window_height = window_size[0]
@@ -138,29 +207,55 @@ def calculate_disparity_from_left_to_right(img_left, img_right, max_disparity, w
     half_window_height = window_height // 2
     half_window_width = window_width // 2
     disparity = np.zeros((height, width))
+    y_range = half_window_height, height - half_window_height
+    moved_y = True
 
-    for y in tqdm(range(half_window_height, height - half_window_height)):
+    if yRange[0] != -1 and yRange[1] != -1:
+        y_range = yRange
+        disparity = np.zeros((y_range[1]-y_range[0], width))
+    else:
+        disparity = np.zeros((height, width))
+        moved_y = False
+    if yRange != (-1, -1):
+        y_range = yRange
+    iterator = range(y_range[0], y_range[1])
+    if print_progress:
+        iterator = tqdm(iterator)
+
+    for y in iterator:
         for x in range(half_window_width, width - half_window_width):
             template = img_right[y - half_window_height: y + half_window_height,
-                       x - half_window_width: x + half_window_width]
+                                 x - half_window_width: x + half_window_width]
             n_disparity = min(max_disparity, width - x - half_window_width)
             score = np.zeros(n_disparity)
 
             for offset in range(n_disparity):
                 roi = img_left[y - half_window_height: y + half_window_height,
-                      x - half_window_width + offset: x + half_window_width + offset]
-                score[offset - 1] = ssd(template, roi)
+                               x - half_window_width + offset: x + half_window_width + offset]
+                score[offset - 1] = abs_m(template, roi)
 
             if criterium == DispCriterium.argmax:
-                disparity[y, x] = score.argmax()
+                disp = score.argmax()
             elif criterium == DispCriterium.argmin:
-                disparity[y, x] = score.argmin()
+                disp = score.argmin()
+            else:
+                raise Exception("Wronf DispCriterium!")
+
+            if moved_y:
+                disparity[y-y_range[0], x] = disp
+            else:
+                disparity[y, x] = disp
     return disparity
 
 
 # Sum of square difference
 def ssd(img_left, img_right):
     return np.sum((img_left - img_right) ** 2)
+
+
+def abs_m(img_left, img_right):
+    '''Should be faster than ssd and give the same result'''
+    return np.sum(np.abs(img_left - img_right))
 
 
 def calculate_disparity_with_depth(depth, f, baseline, doffs):
@@ -170,10 +265,10 @@ def calculate_disparity_with_depth(depth, f, baseline, doffs):
             if (depth[i][j] == 0):
                 pass
             else:
-                disp[i][j] = clamp(0, 255, (baseline * f) / (depth[i][j] - doffs))
+                disp[i][j] = clamp(0, 255, (baseline * f) /
+                                   (depth[i][j] - doffs))
                 #disp[i][j] = (baseline * f) / (depth[i][j] - doffs)
     return disp
-
 
 
 # >>> Depth methods <<<
@@ -220,7 +315,6 @@ def calculate_rgb24_with_depth(depth, max_distance):
     return rgb24
 
 
-
 # >>> Point cloud methods <<<
 def save_depth_to_ply(depth, fov, out_path):
     pcd = []
@@ -233,7 +327,8 @@ def save_depth_to_ply(depth, fov, out_path):
             y = (i - cy) * z / fov  # fy
             pcd.append([x, y, z])
     pcd_o3d = o3d.geometry.PointCloud()                 # Create point cloud object
-    pcd_o3d.points = o3d.utility.Vector3dVector(pcd)    # Set pcd_np as the point cloud points
+    pcd_o3d.points = o3d.utility.Vector3dVector(
+        pcd)    # Set pcd_np as the point cloud points
     o3d.io.write_point_cloud(out_path, pcd_o3d)
     o3d.visualization.draw_geometries([pcd_o3d])        # Visualize
 
