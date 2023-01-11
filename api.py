@@ -25,8 +25,6 @@ DISP_FILE = r"./disp_output_file_Egz34.json"
 USE_SAVED_DISP = False
 
 # >>> General purpose methods <<<
-
-
 def clamp(min, max, value):
     if value < min:
         value = min
