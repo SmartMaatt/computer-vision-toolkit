@@ -34,5 +34,5 @@ api.save_to_ply(disp, img_left, f, "Artroom2/Results/Zad 3/disp_cloud.ply")     
 depth = api.calculate_depth_with_disparity(disp, f, baseline, doffs)
 
 # Wygeneruj chmurę punktów
-fov = api.calculate_fovY_with_focalY(width, f)
+fov = api.calculate_fovW_with_focalX(width, f)
 api.save_depth_to_ply(depth, fov, "Artroom2/Results/Zad 3/depth_cloud.ply")

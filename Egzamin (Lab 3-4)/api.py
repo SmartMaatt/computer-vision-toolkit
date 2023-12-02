@@ -33,33 +33,47 @@ def clamp(min, max, value):
     return value
 
 
-def calculate_focal_with_FOV(image_width, fov):
-    return (image_width / (2 * tan(fov / 2)))
+# Focal -> FOV
+def calculate_focalX_with_FovW_rad(image_width, fovW_rad):
+    return (image_width / (2 * np.tan(fovW_rad / 2)))
+
+def calculate_focalX_with_FovW_deg(image_width, fovW_deg):
+    fovW_rad = np.radians(fovW_deg)
+    return calculate_focalX_with_FovW_rad(image_width, fovW_rad)
+
+def calculate_focalY_with_FovH_rad(image_height, fovH_rad):
+    return (image_height / (2 * np.tan(fovH_rad / 2)))
+
+def calculate_focalY_with_FovH_deg(image_height, fovH_deg):
+    fovH_rad = np.radians(fovH_deg)
+    return calculate_focalY_with_FovH_rad(image_height, fovH_rad)
 
 
+# FOV -> Focal
+def calculate_fovW_with_focalX(image_width, fx):
+    return 2 * np.arctan(image_width / (2 * fx)) * 180 / np.pi
+
+def calculate_fovH_with_focalY(image_height, fy):
+    return 2 * np.arctan(image_height / (2 * fy)) * 180 / np.pi
+
+
+# Baseline
 def calculate_baseline_with_T_matrix(T):
     return round(np.linalg.norm(T) * 0.1, 2)
 
 
-def calculate_fovX_with_focalX(image_height, fx):
-    return 2 * math.atan(image_height / (2 * fx))
-
-
-def calculate_fovY_with_focalY(image_width, fy):
-    return 2 * math.atan(image_width / (2 * fy))
-
-
+# Image center
 def calculate_cx_cy_with_image_size(width, height):
     cx = width / 2
     cy = height / 2
     return (cx, cy)
 
 
+# RGBA <-> ABGR
 def image_to_bgra(image):
     array = np.frombuffer(image, dtype=np.dtype("uint8"))
     array = np.reshape(array, (image.shape[0], image.shape[1], 4))
     return array
-
 
 def image_to_rgb(image):
     array = image_to_bgra(image)

@@ -40,13 +40,23 @@ def stereo_calibrate(objPoints, imgPoints1, imgPoints2, imgSize, mtx1, mtx2, dis
 
         retval, smtx1, sdist1, smtx2, sdist2, R, T, E, F = cv.stereoCalibrate(objPoints, imgPoints1, imgPoints2, mtx1, dist1, mtx2, dist2, imgSize, criteria=criteria, flags=flags)    
         baseline = round(np.linalg.norm(T)*0.1, 2)
-        fov_cam1 = (round(2*np.arctan(imgSize[1]/2*smtx1[0][0]), 2), round(2*np.arctan(imgSize[0]/2*smtx1[1][1]), 2)) 
-        fov_cam2 = (round(2*np.arctan(imgSize[0]/2*smtx2[0][0]), 2), round(2*np.arctan(imgSize[1]/2*smtx2[1][1]), 2))
+        fov_cam1 = calculate_fov(smtx1, image_size1)
+        fov_cam2 = calculate_fov(smtx2, image_size2)
 
         print(f'Baseline: {baseline}cm')
         print(f'FOV of cam1: {fov_cam1}')
         print(f'FOV of cam2: {fov_cam2}')
         return (smtx1, sdist1, smtx2, sdist2, R, T, E, F, baseline, fov_cam1, fov_cam2)
+
+
+def calculate_fov(smtx, imgSize):
+    fx = smtx[0][0]
+    fy = smtx[1][1]
+    width, height = imgSize
+
+    fovW = 2 * np.arctan(width / (2 * fx)) * 180 / np.pi
+    fovH = 2 * np.arctan(height / (2 * fy)) * 180 / np.pi
+    return fovW, fovH
 
 
 def rectification(smtx1, dist1, smtx2, dist2, imgSize, R, T):
