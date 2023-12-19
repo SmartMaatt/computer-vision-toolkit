@@ -8,16 +8,16 @@ from json import JSONEncoder
 import cv2 as cv
 import numpy as np
 
-CALIB_CAM1_PATH = "stereo_calibration_cam1.json"
-CALIB_CAM2_PATH = "stereo_calibration_cam2.json"
+CALIB_CAM1_PATH = "multicam_calibration_cam1.json"
+CALIB_CAM2_PATH = "multicam_calibration_cam2.json"
 
 STEREO_CALIB_PATH = "calibration_stereo.json"
 ALPHA_SCALE = 0
 USE_SAVED_STEREO_CALIB = False
 REMAP_TEST = False
 
-IMAGE_CAM1_PATH = "..\..\\datasets\s4\cam2\\35.png"
-IMAGE_CAM2_PATH = "..\..\\datasets\s4\cam3\\35.png"
+IMAGE_CAM1_PATH = ""
+IMAGE_CAM2_PATH = ""
 OUTPUT_PATH = 'rectified.png'
 
 

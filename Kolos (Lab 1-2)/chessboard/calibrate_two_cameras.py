@@ -13,8 +13,8 @@ CHESSBOARD = (7,10)
 SINGLE_SQUARE = 50
 IMAGES_PATH_CAM1 = "..\..\\datasets\s4\cam2"
 IMAGES_PATH_CAM2 = "..\..\\datasets\s4\cam3"
-OUTPUT_PATH_CAM1 = "stereo_calibration_cam1.json"
-OUTPUT_PATH_CAM2 = "stereo_calibration_cam2.json"
+OUTPUT_PATH_CAM1 = "multicam_calibration_cam1.json"
+OUTPUT_PATH_CAM2 = "multicam_calibration_cam2.json"
 
 
 # Performs camera calibration procedure

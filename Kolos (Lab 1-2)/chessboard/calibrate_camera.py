@@ -12,7 +12,7 @@ import numpy as np
 CHESSBOARD = (7,10)
 SINGLE_SQUARE = 50
 IMAGES_PATH = "..\..\stereo_datasets\cam2"
-OUTPUT_PATH = "mono_calibration_cam1.json"
+OUTPUT_PATH = "mono_calibration.json"
 
 
 # Performs camera calibration process
